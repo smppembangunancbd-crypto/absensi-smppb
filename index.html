@@ -768,9 +768,40 @@
       }
     }
 
+    function syncLocalLockWithSpreadsheet(serverRows) {
+      // Jika tidak ada antrean yang sedang dikirim ke server, jadikan data Spreadsheet sebagai acuan utama (Single Source of Truth)
+      if (syncQueue.length > 0) return;
+
+      const freshRecords = {};
+      serverRows.forEach(row => {
+        const idUser = String(row.idUser || row.nisNip || row.kode || "").trim().toUpperCase();
+        if (!idUser) return;
+        const jamMasuk = String(row.jamMasuk || "").trim();
+        const jamPulang = String(row.jamPulang || "").trim();
+
+        if (jamMasuk && jamMasuk !== "-") {
+          if (!freshRecords[idUser]) freshRecords[idUser] = {};
+          freshRecords[idUser]["IN"] = jamMasuk;
+        }
+        if (jamPulang && jamPulang !== "-") {
+          if (!freshRecords[idUser]) freshRecords[idUser] = {};
+          freshRecords[idUser]["OUT"] = jamPulang;
+        }
+      });
+
+      try {
+        localStorage.setItem(getTodayDateKey(), JSON.stringify(freshRecords));
+      } catch (e) {}
+    }
+
     function mergeSpreadsheetLiveFeed(serverRows) {
-      // serverRows diharapkan urut dari terbaru ke terlama, atau kita urutkan berdasarkan waktu/index terbaru
-      let hasNewEntry = false;
+      // 1. Sinkronkan ulang kunci harian lokal agar 100% cocok dengan isi Google Sheet saat ini
+      // (Jika baris di Google Sheet dihapus / Clear Time Log, kunci lokal otomatis ikut terhapus!)
+      syncLocalLockWithSpreadsheet(serverRows);
+
+      // 2. Bangun ulang daftar log dari Spreadsheet agar baris yang sudah dihapus di Sheet juga hilang dari Live Feed
+      const serverKeys = new Set();
+      const updatedServerLogs = [];
 
       serverRows.forEach(row => {
         const idUser = String(row.idUser || row.nisNip || row.kode || "").trim();
@@ -781,61 +812,55 @@
         const status = String(row.status || "Hadir").trim();
         const metode = String(row.metode || "").trim();
 
-        // Sinkronkan kunci harian lokal agar perangkat ini juga tahu jika user sudah absen di perangkat lain
-        if (idUser && jamMasuk && jamMasuk !== "-") {
-          markAttendedToday(idUser, "IN", jamMasuk);
-        }
-        if (idUser && jamPulang && jamPulang !== "-") {
-          markAttendedToday(idUser, "OUT", jamPulang);
-        }
-
-        // Buat event log terpisah untuk Masuk dan Pulang agar muncul satu per satu secara real-time
         if (jamMasuk && jamMasuk !== "-") {
           const keyIn = `${idUser}_IN_${jamMasuk}`;
-          if (!knownRowKeys.has(keyIn)) {
-            knownRowKeys.add(keyIn);
-            hasNewEntry = true;
-            // Hapus item optimistic lokal sementara jika sudah masuk dari server
-            sessionLogs = sessionLogs.filter(item => !(item.rawCode === idUser && item.mode === "IN" && item.isOptimistic));
-            sessionLogs.unshift({
-              id: keyIn,
-              rawCode: idUser,
-              mode: "IN",
-              time: jamMasuk,
-              title: kelasJabatan ? `${nama} (${kelasJabatan})` : nama,
-              detail: `Masuk • ${status}${metode ? ' • ' + metode : ''}`,
-              ok: true,
-              statusLabel: "MASUK",
-              isNew: true
-            });
-          }
+          serverKeys.add(keyIn);
+          const isBrandNew = !knownRowKeys.has(keyIn);
+          if (isBrandNew) knownRowKeys.add(keyIn);
+
+          updatedServerLogs.unshift({
+            id: keyIn,
+            rawCode: idUser,
+            mode: "IN",
+            time: jamMasuk,
+            title: kelasJabatan ? `${nama} (${kelasJabatan})` : nama,
+            detail: `Masuk • ${status}${metode ? ' • ' + metode : ''}`,
+            ok: true,
+            statusLabel: "MASUK",
+            isNew: isBrandNew
+          });
         }
 
         if (jamPulang && jamPulang !== "-") {
           const keyOut = `${idUser}_OUT_${jamPulang}`;
-          if (!knownRowKeys.has(keyOut)) {
-            knownRowKeys.add(keyOut);
-            hasNewEntry = true;
-            sessionLogs = sessionLogs.filter(item => !(item.rawCode === idUser && item.mode === "OUT" && item.isOptimistic));
-            sessionLogs.unshift({
-              id: keyOut,
-              rawCode: idUser,
-              mode: "OUT",
-              time: jamPulang,
-              title: kelasJabatan ? `${nama} (${kelasJabatan})` : nama,
-              detail: `Pulang • Tercatat${metode ? ' • ' + metode : ''}`,
-              ok: true,
-              statusLabel: "PULANG",
-              isNew: true
-            });
-          }
+          serverKeys.add(keyOut);
+          const isBrandNew = !knownRowKeys.has(keyOut);
+          if (isBrandNew) knownRowKeys.add(keyOut);
+
+          updatedServerLogs.unshift({
+            id: keyOut,
+            rawCode: idUser,
+            mode: "OUT",
+            time: jamPulang,
+            title: kelasJabatan ? `${nama} (${kelasJabatan})` : nama,
+            detail: `Pulang • Tercatat${metode ? ' • ' + metode : ''}`,
+            ok: true,
+            statusLabel: "PULANG",
+            isNew: isBrandNew
+          });
         }
       });
 
-      if (hasNewEntry || sessionLogs.length === 0) {
-        if (sessionLogs.length > 50) sessionLogs = sessionLogs.slice(0, 50);
-        renderHistoryList();
-      }
+      // Pertahankan hanya log optimistic yang masih dalam antrean syncQueue, sisanya gunakan data bersih dari Spreadsheet
+      const pendingOptimistic = sessionLogs.filter(item => item.isOptimistic && syncQueue.length > 0);
+      sessionLogs = [...pendingOptimistic, ...updatedServerLogs].slice(0, 50);
+
+      // Bersihkan knownRowKeys dari data yang sudah dihapus di Spreadsheet
+      knownRowKeys.forEach(k => {
+        if (!serverKeys.has(k)) knownRowKeys.delete(k);
+      });
+
+      renderHistoryList();
     }
 
     function renderHistoryList() {
