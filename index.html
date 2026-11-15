@@ -3,15 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Scanner Kilat - SMP Pembangunan</title>
+  <title>Scanner Kamera Live - SMP Pembangunan</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-  <!-- Pustaka jsQR ringan sebagai fallback jika browser tidak mendukung BarcodeDetector native -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     body { font-family: 'Inter', sans-serif; }
-    #videoPreview { border-radius: 1rem; object-fit: cover; width: 100%; height: 100%; transform: scaleX(1); }
+    #videoPreview { border-radius: 1rem; object-fit: cover; width: 100%; height: 100%; }
     .scan-laser {
       position: absolute;
       left: 10%;
@@ -19,7 +18,7 @@
       height: 2px;
       background: #10b981;
       box-shadow: 0 0 12px #10b981, 0 0 20px #10b981;
-      animation: laserMove 1.8s infinite alternate ease-in-out;
+      animation: laserMove 2s infinite alternate ease-in-out;
     }
     @keyframes laserMove {
       0% { top: 15%; }
@@ -34,11 +33,11 @@
     <div class="max-w-lg mx-auto flex items-center justify-between gap-2">
       <div class="flex items-center gap-2.5">
         <div class="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 font-extrabold text-lg">
-          <i class="fa-solid fa-bolt"></i>
+          <i class="fa-solid fa-qrcode"></i>
         </div>
         <div>
-          <h1 class="font-extrabold text-sm sm:text-base leading-tight">Scanner Kilat Absensi</h1>
-          <p class="text-[11px] text-emerald-400 font-semibold">SMP Pembangunan • Turbo Mode</p>
+          <h1 class="font-extrabold text-sm sm:text-base leading-tight">Scanner Absensi Live</h1>
+          <p class="text-[11px] text-emerald-400 font-semibold">SMP Pembangunan • Direct HTTPS</p>
         </div>
       </div>
       <div class="flex items-center gap-1.5">
@@ -66,35 +65,35 @@
 
     <!-- Pemilih Mode Masuk / Pulang -->
     <div class="grid grid-cols-2 gap-2 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
-      <button type="button" id="btnModeIn" onclick="setScanMode('IN')" class="py-2.5 rounded-xl font-extrabold text-sm bg-emerald-600 text-white shadow-lg transition flex items-center justify-center gap-2">
+      <button type="button" id="btnModeIn" onclick="setScanMode('IN')" class="py-3 rounded-xl font-extrabold text-sm bg-emerald-600 text-white shadow-lg transition flex items-center justify-center gap-2">
         <i class="fa-solid fa-right-to-bracket"></i> ABSEN MASUK
       </button>
-      <button type="button" id="btnModeOut" onclick="setScanMode('OUT')" class="py-2.5 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2">
+      <button type="button" id="btnModeOut" onclick="setScanMode('OUT')" class="py-3 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2">
         <i class="fa-solid fa-right-from-bracket"></i> ABSEN PULANG
       </button>
     </div>
 
     <!-- Area Kamera Live -->
-    <div class="bg-slate-900 rounded-2xl border-2 border-emerald-500/60 p-3.5 space-y-3 shadow-xl">
+    <div id="cameraCard" class="bg-slate-900 rounded-2xl border-2 border-emerald-500/60 p-3.5 space-y-3 shadow-xl transition-colors">
       <div class="flex items-center justify-between text-xs">
-        <span class="inline-flex items-center gap-1.5 font-bold text-emerald-400">
+        <span id="camStatusLabel" class="inline-flex items-center gap-1.5 font-bold text-emerald-400">
           <span id="camStatusDot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
           <span id="camStatusText">Menyiapkan Kamera...</span>
         </span>
-        <select id="cameraSelect" onchange="startTurboCamera()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 max-w-[180px] truncate">
+        <select id="cameraSelect" onchange="startCamera()" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 max-w-[180px] truncate">
           <option value="">Memuat kamera...</option>
         </select>
       </div>
 
-      <!-- Kontainer Video Ringan -->
-      <div class="relative rounded-2xl overflow-hidden bg-black h-[270px] flex items-center justify-center">
+      <!-- Kontainer Video -->
+      <div class="relative rounded-2xl overflow-hidden bg-black h-[265px] flex items-center justify-center">
         <video id="videoPreview" playsinline autoplay muted class="hidden"></video>
         <canvas id="scanCanvas" class="hidden"></canvas>
         
         <!-- Bingkai Target Scan -->
         <div id="scanTargetBox" class="hidden absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div class="w-52 h-52 border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(2,6,23,0.45)]">
-            <div class="scan-laser"></div>
+          <div id="targetFrame" class="w-52 h-52 border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(2,6,23,0.45)]">
+            <div id="laserLine" class="scan-laser"></div>
           </div>
         </div>
 
@@ -102,36 +101,36 @@
           <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl">
             <i class="fa-solid fa-camera"></i>
           </div>
-          <p class="text-xs text-slate-400">Tekan tombol di bawah jika kamera belum menyala.</p>
+          <p class="text-xs text-slate-400">Tekan tombol di bawah untuk menyalakan kamera.</p>
         </div>
       </div>
 
       <div class="grid grid-cols-2 gap-2">
-        <button type="button" onclick="startTurboCamera()" class="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow transition flex items-center justify-center gap-1.5">
+        <button type="button" onclick="startCamera()" class="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow transition flex items-center justify-center gap-1.5">
           <i class="fa-solid fa-play"></i> Nyalakan Kamera
         </button>
-        <button type="button" onclick="stopTurboCamera()" class="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition flex items-center justify-center gap-1.5">
+        <button type="button" onclick="stopCamera()" class="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition flex items-center justify-center gap-1.5">
           <i class="fa-solid fa-stop"></i> Hentikan Kamera
         </button>
       </div>
 
-      <!-- Input Manual / Barcode Gun Fisik -->
+      <!-- Input Manual / Cadangan -->
       <form onsubmit="handleManualInput(event)" class="pt-2 border-t border-slate-800 flex gap-2">
         <input type="text" id="manualCodeInput" placeholder="Atau ketik Kode QR / NIS / NIP..." class="flex-1 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500" />
         <button type="submit" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs">Kirim</button>
       </form>
     </div>
 
-    <!-- Hasil Scan Terakhir -->
+    <!-- Kartu Status Scan Terakhir -->
     <div id="resultCard" class="bg-slate-900 rounded-2xl border border-slate-800 p-3.5 transition-all">
       <div class="flex items-center gap-3">
         <div id="resultIcon" class="w-11 h-11 rounded-xl bg-slate-800 text-slate-400 flex items-center justify-center text-lg shrink-0">
-          <i class="fa-solid fa-qrcode"></i>
+          <i class="fa-solid fa-id-card"></i>
         </div>
         <div class="min-w-0 flex-1">
-          <span id="resultBadge" class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">SIAP MEMINDAI</span>
-          <h2 id="resultTitle" class="font-extrabold text-sm text-white truncate mt-0.5">Arahkan Kartu ke Kotak Hijau</h2>
-          <p id="resultDesc" class="text-xs text-slate-400 truncate">Deteksi instan & otomatis tersimpan</p>
+          <span id="resultBadge" class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">MENUNGGU SCAN</span>
+          <h2 id="resultTitle" class="font-extrabold text-sm text-white truncate mt-0.5">Arahkan QR Code Kartu ke Kamera</h2>
+          <p id="resultDesc" class="text-xs text-slate-400 truncate">Otomatis tersimpan ke Spreadsheet sekolah</p>
         </div>
       </div>
     </div>
@@ -139,25 +138,29 @@
     <!-- Riwayat Scan Sesi Ini -->
     <div class="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
       <div class="px-4 py-2.5 border-b border-slate-800 flex justify-between items-center">
-        <h3 class="text-xs font-extrabold text-slate-300">Riwayat Scan Sesi Ini</h3>
+        <h3 class="text-xs font-extrabold text-slate-300">Riwayat Scan Perangkat Ini</h3>
         <span id="scanCounterBadge" class="text-[11px] font-bold text-emerald-400">0 scan</span>
       </div>
       <div id="sessionHistoryList" class="divide-y divide-slate-800/80 max-h-44 overflow-y-auto text-xs">
-        <div class="p-4 text-center text-slate-500">Belum ada pemindaian.</div>
+        <div class="p-4 text-center text-slate-500">Belum ada pemindaian pada sesi ini.</div>
       </div>
     </div>
 
   </main>
 
-  <!-- Notifikasi Kilat di Atas Layar (Tidak Menghalangi Kamera!) -->
-  <div id="flashBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 hidden w-[92%] max-w-md transition-all duration-200">
-    <div id="flashBannerBox" class="bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-2xl border border-emerald-400 flex items-center gap-3">
-      <div class="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-lg shrink-0">
-        <i id="flashBannerIcon" class="fa-solid fa-check"></i>
+  <!-- Pop-up Notifikasi Konfirmasi Absen Masuk / Pulang Berhasil -->
+  <div id="notifOverlay" onclick="hideNotifOverlay()" class="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 hidden items-center justify-center p-6 cursor-pointer transition-opacity">
+    <div id="notifCard" class="bg-slate-900 border-2 border-emerald-500 rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl space-y-4 transform transition-all scale-100">
+      <div id="notifIconCircle" class="w-20 h-20 mx-auto rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center text-4xl shadow-lg">
+        <i id="notifIcon" class="fa-solid fa-check"></i>
       </div>
-      <div class="min-w-0 flex-1">
-        <p id="flashBannerTitle" class="font-extrabold text-sm truncate">Berhasil Terbaca!</p>
-        <p id="flashBannerSub" class="text-xs text-emerald-100 truncate">Menyimpan ke Spreadsheet...</p>
+      <div class="space-y-1.5">
+        <span id="notifBadge" class="inline-block px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300">
+          ABSEN MASUK BERHASIL
+        </span>
+        <h2 id="notifName" class="text-xl font-extrabold text-white leading-snug pt-1">Nama Siswa / Guru</h2>
+        <p id="notifDetail" class="text-sm font-medium text-slate-300">Tercatat hadir pada pukul 07:05</p>
+        <p class="text-[11px] text-slate-500 pt-2">Ketuk layar atau tunggu sebentar untuk lanjut</p>
       </div>
     </div>
   </div>
@@ -187,12 +190,12 @@
     let videoStream = null;
     let scanLoopId = null;
     let nativeDetector = null;
+    let isProcessingRequest = false; // Kunci agar tidak double scan saat mengirim ke server
     let lastScannedCode = "";
     let lastScannedTime = 0;
     let sessionLogs = [];
-    let flashTimeout = null;
+    let notifTimeout = null;
 
-    // Inisialisasi Native BarcodeDetector jika browser mendukung (Chrome/Edge/Android)
     if ("BarcodeDetector" in window) {
       try {
         nativeDetector = new BarcodeDetector({ formats: ["qr_code"] });
@@ -204,7 +207,7 @@
       document.getElementById("gasUrlInput").value = savedUrl;
       updateUrlAlertVisibility();
       await populateCameras();
-      startTurboCamera();
+      startCamera();
     });
 
     function getGasUrl() {
@@ -233,12 +236,24 @@
       scanMode = mode;
       const btnIn = document.getElementById("btnModeIn");
       const btnOut = document.getElementById("btnModeOut");
+      const camCard = document.getElementById("cameraCard");
+      const targetFrame = document.getElementById("targetFrame");
+      const laserLine = document.getElementById("laserLine");
+
       if (mode === "IN") {
-        btnIn.className = "py-2.5 rounded-xl font-extrabold text-sm bg-emerald-600 text-white shadow-lg transition flex items-center justify-center gap-2";
-        btnOut.className = "py-2.5 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2";
+        btnIn.className = "py-3 rounded-xl font-extrabold text-sm bg-emerald-600 text-white shadow-lg transition flex items-center justify-center gap-2";
+        btnOut.className = "py-3 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2";
+        camCard.className = "bg-slate-900 rounded-2xl border-2 border-emerald-500/60 p-3.5 space-y-3 shadow-xl transition-colors";
+        targetFrame.className = "w-52 h-52 border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(2,6,23,0.45)]";
+        laserLine.style.background = "#10b981";
+        laserLine.style.boxShadow = "0 0 12px #10b981, 0 0 20px #10b981";
       } else {
-        btnOut.className = "py-2.5 rounded-xl font-extrabold text-sm bg-blue-600 text-white shadow-lg transition flex items-center justify-center gap-2";
-        btnIn.className = "py-2.5 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2";
+        btnOut.className = "py-3 rounded-xl font-extrabold text-sm bg-blue-600 text-white shadow-lg transition flex items-center justify-center gap-2";
+        btnIn.className = "py-3 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2";
+        camCard.className = "bg-slate-900 rounded-2xl border-2 border-blue-500/60 p-3.5 space-y-3 shadow-xl transition-colors";
+        targetFrame.className = "w-52 h-52 border-2 border-blue-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(2,6,23,0.45)]";
+        laserLine.style.background = "#3b82f6";
+        laserLine.style.boxShadow = "0 0 12px #3b82f6, 0 0 20px #3b82f6";
       }
     }
 
@@ -249,7 +264,7 @@
         : '<i class="fa-solid fa-volume-xmark text-slate-500"></i>';
     }
 
-    function playInstantBeep(isSuccess) {
+    function playBeep(isSuccess) {
       if (!soundEnabled) return;
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -257,17 +272,16 @@
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.frequency.setValueAtTime(isSuccess ? 1050 : 300, ctx.currentTime);
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        osc.frequency.setValueAtTime(isSuccess ? 950 : 300, ctx.currentTime);
+        gain.gain.setValueAtTime(0.28, ctx.currentTime);
         osc.start();
-        osc.stop(ctx.currentTime + (isSuccess ? 0.12 : 0.3));
+        osc.stop(ctx.currentTime + (isSuccess ? 0.16 : 0.35));
       } catch (e) {}
     }
 
     async function populateCameras() {
       const select = document.getElementById("cameraSelect");
       try {
-        // Minta izin awal agar label kamera muncul
         const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
         tempStream.getTracks().forEach(t => t.stop());
 
@@ -281,7 +295,6 @@
           return `<option value="${cam.deviceId}">${cam.label || `Kamera ${idx + 1}`}</option>`;
         }).join("");
 
-        // Pilih kamera belakang jika di HP
         const backCam = videoDevices.find(c => /back|belakang|rear|environment/i.test(c.label));
         if (backCam) select.value = backCam.deviceId;
       } catch (e) {
@@ -289,8 +302,8 @@
       }
     }
 
-    async function startTurboCamera() {
-      stopTurboCamera();
+    async function startCamera() {
+      stopCamera();
       const video = document.getElementById("videoPreview");
       const placeholder = document.getElementById("cameraPlaceholder");
       const targetBox = document.getElementById("scanTargetBox");
@@ -298,14 +311,12 @@
       const statusTxt = document.getElementById("camStatusText");
       const selectedDeviceId = document.getElementById("cameraSelect").value;
 
-      // Kunci resolusi ideal ke 640x480 atau 720p agar pemrosesan frame super cepat tanpa lag
       const constraints = {
         video: {
           deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
           facingMode: selectedDeviceId ? undefined : "environment",
           width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 30 }
+          height: { ideal: 480 }
         },
         audio: false
       };
@@ -319,7 +330,7 @@
         targetBox.classList.remove("hidden");
         placeholder.classList.add("hidden");
         dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping";
-        statusTxt.textContent = nativeDetector ? "Turbo Hardware Scanner Aktif" : "Turbo JS Scanner Aktif";
+        statusTxt.textContent = "Kamera Live Aktif";
 
         startScanLoop();
       } catch (err) {
@@ -328,7 +339,7 @@
       }
     }
 
-    function stopTurboCamera() {
+    function stopCamera() {
       if (scanLoopId) {
         cancelAnimationFrame(scanLoopId);
         scanLoopId = null;
@@ -350,24 +361,21 @@
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
       async function tick() {
-        if (!videoStream || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        // Jangan memindai baru jika sedang memproses request ke server atau pop-up notif sedang tampil
+        if (!videoStream || video.readyState !== video.HAVE_ENOUGH_DATA || isProcessingRequest) {
           scanLoopId = requestAnimationFrame(tick);
           return;
         }
 
         try {
-          // 1. Jalur Tercepat: Native BarcodeDetector API (Hardware Accelerated)
           if (nativeDetector) {
             const barcodes = await nativeDetector.detect(video);
             if (barcodes && barcodes.length > 0) {
               handleDetectedCode(barcodes[0].rawValue);
             }
-          } 
-          // 2. Jalur Fallback: jsQR pada area tengah yang dipotong (crop) agar super ringan
-          else if (typeof jsQR !== "undefined") {
+          } else if (typeof jsQR !== "undefined") {
             const vw = video.videoWidth;
             const vh = video.videoHeight;
-            // Potong hanya 60% bagian tengah video untuk mengurangi beban CPU hingga 3x lipat
             const cropSize = Math.min(vw, vh) * 0.65;
             const sx = (vw - cropSize) / 2;
             const sy = (vh - cropSize) / 2;
@@ -392,44 +400,40 @@
 
     function handleDetectedCode(rawCode) {
       const code = String(rawCode || "").trim();
-      if (!code) return;
+      if (!code || isProcessingRequest) return;
 
       const now = Date.now();
-      // Cegah scan ganda untuk kartu yang sama dalam 1.5 detik
-      if (code === lastScannedCode && (now - lastScannedTime) < 1500) {
+      // Jeda aman 2.5 detik agar tidak ter-scan dua kali secara tidak sengaja
+      if (code === lastScannedCode && (now - lastScannedTime) < 2500) {
         return;
       }
 
       lastScannedCode = code;
       lastScannedTime = now;
-
-      // INSTAN FEEDBACK: Langsung bunyi beep & tampilkan notifikasi tanpa menunggu server GAS!
-      playInstantBeep(true);
-      showFlashBanner("info", `Terbaca: ${code}`, "Mengirim ke Spreadsheet...");
-      sendAttendanceBackground(code);
+      sendAttendanceToGas(code);
     }
 
     function handleManualInput(e) {
       e.preventDefault();
       const inp = document.getElementById("manualCodeInput");
       const code = inp.value.trim();
-      if (!code) return;
+      if (!code || isProcessingRequest) return;
       inp.value = "";
-      playInstantBeep(true);
-      sendAttendanceBackground(code);
+      sendAttendanceToGas(code);
     }
 
-    // Pengiriman Asynchronous di Latar Belakang agar kamera tidak pernah terhenti
-    async function sendAttendanceBackground(code) {
+    async function sendAttendanceToGas(code) {
       const gasUrl = getGasUrl();
       if (!gasUrl || !gasUrl.startsWith("http")) {
-        playInstantBeep(false);
-        showFlashBanner("error", "URL GAS Belum Diatur!", "Klik tombol URL GAS di kanan atas.");
+        playBeep(false);
+        showResult("error", "URL BELUM DIATUR", "Gagal Mengirim Scan", "Klik tombol 'URL GAS' di kanan atas dan tempelkan link Web App Anda.");
+        toggleConfigModal();
         return;
       }
 
-      const timeNow = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      showResult("loading", "MENYIMPAN...", `Kode: ${code}`, `Sinkronisasi absen ${scanMode === "IN" ? "MASUK" : "PULANG"}...`);
+      isProcessingRequest = true;
+      const modeLabel = scanMode === "IN" ? "MASUK" : "PULANG";
+      showResult("loading", "MEMPROSES...", `Kode: ${code}`, `Mencatat absen ${modeLabel} ke Spreadsheet...`);
 
       try {
         const response = await fetch(gasUrl, {
@@ -443,49 +447,110 @@
         });
 
         const res = await response.json();
+        const timeNow = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
         if (res.success) {
+          playBeep(true);
           const nama = res.data ? `${res.data.nama} (${res.data.kelasJabatan})` : code;
-          const fullMsg = res.message || `Absen ${scanMode} berhasil`;
-          showResult("success", `TERSIMPAN • ${scanMode}`, nama, fullMsg);
-          showFlashBanner("success", nama, fullMsg);
+          const fullMsg = res.message || `Absen ${modeLabel} berhasil dicatat`;
+          
+          showResult("success", `BERHASIL • ${modeLabel}`, nama, fullMsg);
+          showSuccessModal(scanMode, nama, fullMsg);
           prependHistory(timeNow, nama, fullMsg, true);
         } else {
-          playInstantBeep(false);
-          showResult("error", "GAGAL", `Kode: ${code}`, res.message || "Kartu tidak terdaftar.");
-          showFlashBanner("error", `Gagal: ${code}`, res.message || "Kartu tidak ditemukan.");
+          playBeep(false);
+          showResult("error", "GAGAL", `Kode: ${code}`, res.message || "Gagal mencatat absensi.");
+          showErrorModal(code, res.message || "Kartu tidak terdaftar di database.");
           prependHistory(timeNow, code, res.message || "Gagal", false);
         }
       } catch (err) {
-        playInstantBeep(false);
-        showResult("error", "KONEKSI ERROR", `Kode: ${code}`, "Gagal terhubung ke server Spreadsheet.");
-        prependHistory(timeNow, code, "Koneksi gagal", false);
+        playBeep(false);
+        showResult("error", "KONEKSI ERROR", "Gagal Terhubung ke Server GAS", "Periksa koneksi internet atau URL Web App Anda.");
+      } finally {
+        // Beri jeda singkat sebelum membuka kunci scan berikutnya
+        setTimeout(() => {
+          isProcessingRequest = false;
+        }, 800);
       }
     }
 
-    function showFlashBanner(type, title, sub) {
-      const banner = document.getElementById("flashBanner");
-      const box = document.getElementById("flashBannerBox");
-      const icon = document.getElementById("flashBannerIcon");
-      document.getElementById("flashBannerTitle").textContent = title;
-      document.getElementById("flashBannerSub").textContent = sub;
+    function showSuccessModal(mode, namaUser, detailText) {
+      const overlay = document.getElementById("notifOverlay");
+      const card = document.getElementById("notifCard");
+      const circle = document.getElementById("notifIconCircle");
+      const icon = document.getElementById("notifIcon");
+      const badge = document.getElementById("notifBadge");
+      const nameEl = document.getElementById("notifName");
+      const detailEl = document.getElementById("notifDetail");
 
-      if (type === "success") {
-        box.className = "bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-2xl border border-emerald-400 flex items-center gap-3";
-        icon.className = "fa-solid fa-check";
-      } else if (type === "error") {
-        box.className = "bg-rose-600 text-white px-4 py-3 rounded-2xl shadow-2xl border border-rose-400 flex items-center gap-3";
-        icon.className = "fa-solid fa-xmark";
+      const isLate = String(detailText).toLowerCase().includes("terlambat");
+      nameEl.textContent = namaUser;
+      detailEl.textContent = detailText;
+
+      if (mode === "OUT") {
+        // Notifikasi Absen Pulang Berhasil (Tema Biru)
+        card.className = "bg-slate-900 border-2 border-blue-500 rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl space-y-4 transform transition-all scale-100";
+        circle.className = "w-20 h-20 mx-auto rounded-full bg-blue-500 text-white flex items-center justify-center text-4xl shadow-lg shadow-blue-500/30";
+        icon.className = "fa-solid fa-right-from-bracket";
+        badge.className = "inline-block px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-blue-500/20 text-blue-300";
+        badge.textContent = "ABSEN PULANG BERHASIL";
+      } else if (isLate) {
+        // Notifikasi Absen Masuk Terlambat (Tema Oranye/Amber)
+        card.className = "bg-slate-900 border-2 border-amber-500 rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl space-y-4 transform transition-all scale-100";
+        circle.className = "w-20 h-20 mx-auto rounded-full bg-amber-500 text-slate-950 flex items-center justify-center text-4xl shadow-lg shadow-amber-500/30";
+        icon.className = "fa-solid fa-clock";
+        badge.className = "inline-block px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-300";
+        badge.textContent = "ABSEN MASUK BERHASIL (TERLAMBAT)";
       } else {
-        box.className = "bg-blue-600 text-white px-4 py-3 rounded-2xl shadow-2xl border border-blue-400 flex items-center gap-3";
-        icon.className = "fa-solid fa-bolt";
+        // Notifikasi Absen Masuk Tepat Waktu (Tema Hijau Emerald)
+        card.className = "bg-slate-900 border-2 border-emerald-500 rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl space-y-4 transform transition-all scale-100";
+        circle.className = "w-20 h-20 mx-auto rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center text-4xl shadow-lg shadow-emerald-500/30";
+        icon.className = "fa-solid fa-check";
+        badge.className = "inline-block px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300";
+        badge.textContent = "ABSEN MASUK BERHASIL";
       }
 
-      banner.classList.remove("hidden");
-      if (flashTimeout) clearTimeout(flashTimeout);
-      flashTimeout = setTimeout(() => {
-        banner.classList.add("hidden");
-      }, 1800);
+      overlay.classList.remove("hidden");
+      overlay.classList.add("flex");
+
+      if (notifTimeout) clearTimeout(notifTimeout);
+      notifTimeout = setTimeout(() => {
+        hideNotifOverlay();
+      }, 2000); // Tampil selama 2 detik agar jelas terbaca
+    }
+
+    function showErrorModal(code, errorMsg) {
+      const overlay = document.getElementById("notifOverlay");
+      const card = document.getElementById("notifCard");
+      const circle = document.getElementById("notifIconCircle");
+      const icon = document.getElementById("notifIcon");
+      const badge = document.getElementById("notifBadge");
+
+      card.className = "bg-slate-900 border-2 border-rose-500 rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl space-y-4 transform transition-all scale-100";
+      circle.className = "w-20 h-20 mx-auto rounded-full bg-rose-500 text-white flex items-center justify-center text-4xl shadow-lg shadow-rose-500/30";
+      icon.className = "fa-solid fa-xmark";
+      badge.className = "inline-block px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-rose-500/20 text-rose-300";
+      badge.textContent = "ABSENSI GAGAL";
+      document.getElementById("notifName").textContent = `Kode: ${code}`;
+      document.getElementById("notifDetail").textContent = errorMsg;
+
+      overlay.classList.remove("hidden");
+      overlay.classList.add("flex");
+
+      if (notifTimeout) clearTimeout(notifTimeout);
+      notifTimeout = setTimeout(() => {
+        hideNotifOverlay();
+      }, 2200);
+    }
+
+    function hideNotifOverlay() {
+      const overlay = document.getElementById("notifOverlay");
+      overlay.classList.add("hidden");
+      overlay.classList.remove("flex");
+      if (notifTimeout) {
+        clearTimeout(notifTimeout);
+        notifTimeout = null;
+      }
     }
 
     function showResult(type, badgeText, titleText, descText) {
