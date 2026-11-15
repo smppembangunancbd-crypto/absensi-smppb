@@ -24,6 +24,13 @@
       0% { top: 15%; }
       100% { top: 85%; }
     }
+    @keyframes rowSlideIn {
+      from { opacity: 0; transform: translateY(-8px); background-color: rgba(16, 185, 129, 0.18); }
+      to { opacity: 1; transform: translateY(0); background-color: transparent; }
+    }
+    .new-live-row {
+      animation: rowSlideIn 0.65s ease-out forwards;
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-white min-h-screen flex flex-col justify-between">
@@ -135,17 +142,24 @@
       </div>
     </div>
 
-    <!-- Riwayat Scan Sesi Ini -->
+    <!-- Live Feed Kehadiran Hari Ini (Real-Time dari Spreadsheet) -->
     <div class="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
-      <div class="px-4 py-2.5 border-b border-slate-800 flex justify-between items-center">
-        <h3 class="text-xs font-extrabold text-slate-300">Riwayat Scan Perangkat Ini</h3>
+      <div class="px-4 py-2.5 border-b border-slate-800 flex flex-wrap justify-between items-center gap-2">
+        <div class="flex items-center gap-2">
+          <span id="liveDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <h3 class="text-xs font-extrabold text-slate-200">Live Feed Kehadiran Hari Ini</h3>
+        </div>
         <div class="flex items-center gap-2">
           <span id="syncStatusBadge" class="hidden text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 animate-pulse">Menyimpan 0...</span>
-          <span id="scanCounterBadge" class="text-[11px] font-bold text-emerald-400">0 scan</span>
+          <span id="liveLastUpdate" class="text-[10px] font-mono text-slate-400">Menunggu sinkron...</span>
+          <button type="button" onclick="fetchLiveAttendanceFeed(true)" class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]" title="Segarkan Sekarang">
+            <i id="liveRefreshIcon" class="fa-solid fa-arrows-rotate"></i>
+          </button>
+          <span id="scanCounterBadge" class="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">0 data</span>
         </div>
       </div>
-      <div id="sessionHistoryList" class="divide-y divide-slate-800/80 max-h-44 overflow-y-auto text-xs">
-        <div class="p-4 text-center text-slate-500">Belum ada pemindaian pada sesi ini.</div>
+      <div id="sessionHistoryList" class="divide-y divide-slate-800/80 max-h-56 overflow-y-auto text-xs">
+        <div class="p-4 text-center text-slate-500">Memuat data kehadiran hari ini dari Spreadsheet...</div>
       </div>
     </div>
 
@@ -201,6 +215,10 @@
     let notifTimeout = null;
     let syncQueue = [];
     let isSyncWorkerRunning = false;
+    let liveFeedRows = [];
+    let knownRowKeys = new Set();
+    let livePollTimer = null;
+    let isFetchingLiveFeed = false;
 
     function getTodayDateKey() {
       const now = new Date();
@@ -263,6 +281,7 @@
       const savedUrl = localStorage.getItem(GAS_URL_KEY) || "";
       document.getElementById("gasUrlInput").value = savedUrl;
       updateUrlAlertVisibility();
+      startLiveFeedPolling();
       await populateCameras();
       startCamera();
     });
@@ -287,6 +306,7 @@
       localStorage.setItem(GAS_URL_KEY, val);
       updateUrlAlertVisibility();
       toggleConfigModal();
+      fetchLiveAttendanceFeed(true);
     }
 
     function setScanMode(mode) {
@@ -706,25 +726,168 @@
       }
     }
 
+    function startLiveFeedPolling() {
+      fetchLiveAttendanceFeed(true);
+      if (livePollTimer) clearInterval(livePollTimer);
+      // Polling ringan setiap 3.5 detik untuk menarik data terbaru dari Spreadsheet secara real-time
+      livePollTimer = setInterval(() => {
+        if (!document.hidden && syncQueue.length === 0) {
+          fetchLiveAttendanceFeed(false);
+        }
+      }, 3500);
+    }
+
+    async function fetchLiveAttendanceFeed(isManual = false) {
+      const gasUrl = getGasUrl();
+      if (!gasUrl || !gasUrl.startsWith("http") || isFetchingLiveFeed) return;
+
+      isFetchingLiveFeed = true;
+      const icon = document.getElementById("liveRefreshIcon");
+      if (icon && isManual) icon.classList.add("fa-spin");
+
+      try {
+        const separator = gasUrl.includes("?") ? "&" : "?";
+        const url = `${gasUrl}${separator}action=liveFeed&t=${Date.now()}`;
+        const response = await fetch(url, { method: "GET" });
+        const res = await response.json();
+
+        if (res && res.success && Array.isArray(res.data)) {
+          mergeSpreadsheetLiveFeed(res.data);
+          const nowStr = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          const updEl = document.getElementById("liveLastUpdate");
+          if (updEl) updEl.textContent = `Live • ${nowStr}`;
+          const dot = document.getElementById("liveDot");
+          if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+        }
+      } catch (e) {
+        const dot = document.getElementById("liveDot");
+        if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400";
+      } finally {
+        isFetchingLiveFeed = false;
+        if (icon) icon.classList.remove("fa-spin");
+      }
+    }
+
+    function mergeSpreadsheetLiveFeed(serverRows) {
+      // serverRows diharapkan urut dari terbaru ke terlama, atau kita urutkan berdasarkan waktu/index terbaru
+      let hasNewEntry = false;
+
+      serverRows.forEach(row => {
+        const idUser = String(row.idUser || row.nisNip || row.kode || "").trim();
+        const nama = String(row.nama || idUser || "Tanpa Nama").trim();
+        const kelasJabatan = String(row.kelasJabatan || row.kelas || "").trim();
+        const jamMasuk = String(row.jamMasuk || "").trim();
+        const jamPulang = String(row.jamPulang || "").trim();
+        const status = String(row.status || "Hadir").trim();
+        const metode = String(row.metode || "").trim();
+
+        // Sinkronkan kunci harian lokal agar perangkat ini juga tahu jika user sudah absen di perangkat lain
+        if (idUser && jamMasuk && jamMasuk !== "-") {
+          markAttendedToday(idUser, "IN", jamMasuk);
+        }
+        if (idUser && jamPulang && jamPulang !== "-") {
+          markAttendedToday(idUser, "OUT", jamPulang);
+        }
+
+        // Buat event log terpisah untuk Masuk dan Pulang agar muncul satu per satu secara real-time
+        if (jamMasuk && jamMasuk !== "-") {
+          const keyIn = `${idUser}_IN_${jamMasuk}`;
+          if (!knownRowKeys.has(keyIn)) {
+            knownRowKeys.add(keyIn);
+            hasNewEntry = true;
+            // Hapus item optimistic lokal sementara jika sudah masuk dari server
+            sessionLogs = sessionLogs.filter(item => !(item.rawCode === idUser && item.mode === "IN" && item.isOptimistic));
+            sessionLogs.unshift({
+              id: keyIn,
+              rawCode: idUser,
+              mode: "IN",
+              time: jamMasuk,
+              title: kelasJabatan ? `${nama} (${kelasJabatan})` : nama,
+              detail: `Masuk • ${status}${metode ? ' • ' + metode : ''}`,
+              ok: true,
+              statusLabel: "MASUK",
+              isNew: true
+            });
+          }
+        }
+
+        if (jamPulang && jamPulang !== "-") {
+          const keyOut = `${idUser}_OUT_${jamPulang}`;
+          if (!knownRowKeys.has(keyOut)) {
+            knownRowKeys.add(keyOut);
+            hasNewEntry = true;
+            sessionLogs = sessionLogs.filter(item => !(item.rawCode === idUser && item.mode === "OUT" && item.isOptimistic));
+            sessionLogs.unshift({
+              id: keyOut,
+              rawCode: idUser,
+              mode: "OUT",
+              time: jamPulang,
+              title: kelasJabatan ? `${nama} (${kelasJabatan})` : nama,
+              detail: `Pulang • Tercatat${metode ? ' • ' + metode : ''}`,
+              ok: true,
+              statusLabel: "PULANG",
+              isNew: true
+            });
+          }
+        }
+      });
+
+      if (hasNewEntry || sessionLogs.length === 0) {
+        if (sessionLogs.length > 50) sessionLogs = sessionLogs.slice(0, 50);
+        renderHistoryList();
+      }
+    }
+
     function renderHistoryList() {
-      document.getElementById("scanCounterBadge").textContent = `${sessionLogs.length} scan`;
-      document.getElementById("sessionHistoryList").innerHTML = sessionLogs.map(item => `
-        <div class="px-4 py-2 flex items-center justify-between gap-2">
-          <div class="min-w-0">
-            <p class="font-bold text-slate-200 truncate">${item.title}</p>
-            <p class="text-[11px] text-slate-400 truncate">${item.detail}</p>
+      const container = document.getElementById("sessionHistoryList");
+      document.getElementById("scanCounterBadge").textContent = `${sessionLogs.length} log`;
+
+      if (sessionLogs.length === 0) {
+        container.innerHTML = `<div class="p-4 text-center text-slate-500">Belum ada data kehadiran hari ini di Spreadsheet.</div>`;
+        return;
+      }
+
+      container.innerHTML = sessionLogs.map(item => {
+        const isOut = item.mode === "OUT" || item.statusLabel === "PULANG";
+        const badgeColor = !item.ok
+          ? "text-rose-400"
+          : isOut
+            ? "text-blue-400"
+            : "text-emerald-400";
+
+        return `
+          <div class="px-4 py-2.5 flex items-center justify-between gap-2 ${item.isNew ? 'new-live-row' : ''}">
+            <div class="min-w-0">
+              <p class="font-bold text-slate-200 truncate">${item.title}</p>
+              <p class="text-[11px] text-slate-400 truncate">${item.detail}</p>
+            </div>
+            <div class="text-right shrink-0">
+              <span class="font-mono text-[11px] text-slate-300 block">${item.time}</span>
+              <span class="text-[10px] font-extrabold ${badgeColor}">${item.statusLabel || (item.ok ? 'Tersimpan' : 'Gagal')}</span>
+            </div>
           </div>
-          <div class="text-right shrink-0">
-            <span class="font-mono text-[11px] text-slate-400 block">${item.time}</span>
-            <span class="text-[10px] font-bold ${item.ok ? 'text-emerald-400' : 'text-rose-400'}">${item.statusLabel || (item.ok ? 'Tersimpan' : 'Gagal')}</span>
-          </div>
-        </div>
-      `).join("");
+        `;
+      }).join("");
+
+      // Reset flag isNew setelah dirender agar animasi hanya berjalan sekali saat item baru masuk
+      sessionLogs.forEach(item => { item.isNew = false; });
     }
 
     function prependHistory(time, title, detail, ok, logId) {
-      sessionLogs.unshift({ id: logId, time, title, detail, ok, statusLabel: "Menyimpan..." });
-      if (sessionLogs.length > 30) sessionLogs.pop();
+      const codeMatch = String(title).replace("ID:", "").trim();
+      sessionLogs.unshift({
+        id: logId,
+        rawCode: codeMatch,
+        mode: scanMode,
+        isOptimistic: true,
+        time,
+        title,
+        detail,
+        ok,
+        statusLabel: "Menyimpan...",
+        isNew: true
+      });
+      if (sessionLogs.length > 50) sessionLogs.pop();
       renderHistoryList();
     }
 
@@ -734,8 +897,12 @@
         target.title = newTitle;
         target.detail = newDetail;
         target.ok = ok;
-        target.statusLabel = ok ? "Tersimpan" : "Gagal";
+        target.statusLabel = ok ? (target.mode === "OUT" ? "PULANG" : "MASUK") : "Gagal";
         renderHistoryList();
+      }
+      // Segera tarik data terbaru dari sheet agar sinkron penuh dengan perangkat lain
+      if (ok) {
+        setTimeout(() => fetchLiveAttendanceFeed(false), 600);
       }
     }
   </script>
