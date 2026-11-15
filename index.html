@@ -403,7 +403,7 @@
 
       const now = Date.now();
       // Titik tengah antara 2.5 detik (2500ms) dan 1.8 detik (1800ms) -> 2.15 detik (1900ms)
-      if (code === lastScannedCode && (now - lastScannedTime) < 3500) {
+      if (code === lastScannedCode && (now - lastScannedTime) < 2800) {
         return;
       }
 
@@ -472,7 +472,7 @@
         // Buka kunci pemindaian setelah pop-up notifikasi selesai tampil (1600ms) agar tidak menumpuk
         setTimeout(() => {
           isProcessingRequest = false;
-        }, 1600);
+        }, 1250);
       }
     }
 
@@ -516,7 +516,7 @@
       // Titik tengah antara 2000ms dan 1500ms -> 1500ms (1.75 detik)
       notifTimeout = setTimeout(() => {
         hideNotifOverlay();
-      }, 1500);
+      }, 1250);
     }
 
     function showErrorModal(code, errorMsg) {
