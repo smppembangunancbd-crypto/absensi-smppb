@@ -404,7 +404,7 @@
 
       const now = Date.now();
       // Jeda aman 2.5 detik agar tidak ter-scan dua kali secara tidak sengaja
-      if (code === lastScannedCode && (now - lastScannedTime) < 2500) {
+      if (code === lastScannedCode && (now - lastScannedTime) < 1800) {
         return;
       }
 
@@ -470,7 +470,7 @@
         // Beri jeda singkat sebelum membuka kunci scan berikutnya
         setTimeout(() => {
           isProcessingRequest = false;
-        }, 800);
+        }, 400);
       }
     }
 
@@ -516,7 +516,7 @@
       if (notifTimeout) clearTimeout(notifTimeout);
       notifTimeout = setTimeout(() => {
         hideNotifOverlay();
-      }, 2000); // Tampil selama 2 detik agar jelas terbaca
+      }, 1500); // Pop-up tampil 1.5 detik agar tetap terbaca jelas namun lebih cepat lanjut
     }
 
     function showErrorModal(code, errorMsg) {
