@@ -190,7 +190,7 @@
     let videoStream = null;
     let scanLoopId = null;
     let nativeDetector = null;
-    let isProcessingRequest = false; // Kunci agar tidak double scan saat mengirim ke server
+    let isProcessingRequest = false;
     let lastScannedCode = "";
     let lastScannedTime = 0;
     let sessionLogs = [];
@@ -361,7 +361,6 @@
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
       async function tick() {
-        // Jangan memindai baru jika sedang memproses request ke server atau pop-up notif sedang tampil
         if (!videoStream || video.readyState !== video.HAVE_ENOUGH_DATA || isProcessingRequest) {
           scanLoopId = requestAnimationFrame(tick);
           return;
@@ -403,8 +402,8 @@
       if (!code || isProcessingRequest) return;
 
       const now = Date.now();
-      // Jeda aman 2.5 detik agar tidak ter-scan dua kali secara tidak sengaja
-      if (code === lastScannedCode && (now - lastScannedTime) < 2500) {
+      // Titik tengah antara 2.5 detik (2500ms) dan 1.8 detik (1800ms) -> 2.15 detik (2150ms)
+      if (code === lastScannedCode && (now - lastScannedTime) < 2150) {
         return;
       }
 
@@ -467,10 +466,10 @@
         playBeep(false);
         showResult("error", "KONEKSI ERROR", "Gagal Terhubung ke Server GAS", "Periksa koneksi internet atau URL Web App Anda.");
       } finally {
-        // Beri jeda singkat sebelum membuka kunci scan berikutnya
+        // Titik tengah antara 800ms dan 400ms -> 600ms
         setTimeout(() => {
           isProcessingRequest = false;
-        }, 800);
+        }, 600);
       }
     }
 
@@ -488,21 +487,18 @@
       detailEl.textContent = detailText;
 
       if (mode === "OUT") {
-        // Notifikasi Absen Pulang Berhasil (Tema Biru)
         card.className = "bg-slate-900 border-2 border-blue-500 rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl space-y-4 transform transition-all scale-100";
         circle.className = "w-20 h-20 mx-auto rounded-full bg-blue-500 text-white flex items-center justify-center text-4xl shadow-lg shadow-blue-500/30";
         icon.className = "fa-solid fa-right-from-bracket";
         badge.className = "inline-block px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-blue-500/20 text-blue-300";
         badge.textContent = "ABSEN PULANG BERHASIL";
       } else if (isLate) {
-        // Notifikasi Absen Masuk Terlambat (Tema Oranye/Amber)
         card.className = "bg-slate-900 border-2 border-amber-500 rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl space-y-4 transform transition-all scale-100";
         circle.className = "w-20 h-20 mx-auto rounded-full bg-amber-500 text-slate-950 flex items-center justify-center text-4xl shadow-lg shadow-amber-500/30";
         icon.className = "fa-solid fa-clock";
         badge.className = "inline-block px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-300";
         badge.textContent = "ABSEN MASUK BERHASIL (TERLAMBAT)";
       } else {
-        // Notifikasi Absen Masuk Tepat Waktu (Tema Hijau Emerald)
         card.className = "bg-slate-900 border-2 border-emerald-500 rounded-3xl max-w-sm w-full p-7 text-center shadow-2xl space-y-4 transform transition-all scale-100";
         circle.className = "w-20 h-20 mx-auto rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center text-4xl shadow-lg shadow-emerald-500/30";
         icon.className = "fa-solid fa-check";
@@ -514,9 +510,10 @@
       overlay.classList.add("flex");
 
       if (notifTimeout) clearTimeout(notifTimeout);
+      // Titik tengah antara 2000ms dan 1500ms -> 1750ms (1.75 detik)
       notifTimeout = setTimeout(() => {
         hideNotifOverlay();
-      }, 2000); // Tampil selama 2 detik agar jelas terbaca
+      }, 1750);
     }
 
     function showErrorModal(code, errorMsg) {
@@ -540,7 +537,7 @@
       if (notifTimeout) clearTimeout(notifTimeout);
       notifTimeout = setTimeout(() => {
         hideNotifOverlay();
-      }, 2200);
+      }, 2000);
     }
 
     function hideNotifOverlay() {
