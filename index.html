@@ -185,6 +185,7 @@
 
   <script>
     const GAS_URL_KEY = "smp_pembangunan_gas_webapp_url";
+    const DAILY_LOCK_PREFIX = "smp_pembangunan_absen_harian_";
     let scanMode = "IN";
     let soundEnabled = true;
     let videoStream = null;
@@ -195,6 +196,46 @@
     let lastScannedTime = 0;
     let sessionLogs = [];
     let notifTimeout = null;
+
+    function getTodayDateKey() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${DAILY_LOCK_PREFIX}${y}-${m}-${d}`;
+    }
+
+    function getDailyAttendanceRecord() {
+      try {
+        // Bersihkan cache tanggal hari-hari sebelumnya agar memori browser tetap ringan
+        const todayKey = getTodayDateKey();
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(DAILY_LOCK_PREFIX) && k !== todayKey) {
+            localStorage.removeItem(k);
+          }
+        }
+        return JSON.parse(localStorage.getItem(todayKey) || "{}");
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function hasAttendedToday(code, mode) {
+      const normalizedCode = String(code || "").trim().toUpperCase();
+      const records = getDailyAttendanceRecord();
+      return Boolean(records[normalizedCode] && records[normalizedCode][mode]);
+    }
+
+    function markAttendedToday(code, mode, infoText) {
+      const normalizedCode = String(code || "").trim().toUpperCase();
+      const records = getDailyAttendanceRecord();
+      if (!records[normalizedCode]) records[normalizedCode] = {};
+      records[normalizedCode][mode] = infoText || new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+      try {
+        localStorage.setItem(getTodayDateKey(), JSON.stringify(records));
+      } catch (e) {}
+    }
 
     if ("BarcodeDetector" in window) {
       try {
@@ -402,8 +443,8 @@
       if (!code || isProcessingRequest) return;
 
       const now = Date.now();
-      // Titik tengah antara 2.5 detik (2500ms) dan 1.8 detik (1800ms) -> 2.15 detik (1900ms)
-      if (code === lastScannedCode && (now - lastScannedTime) < 2800) {
+      // Jeda singkat 1.5 detik untuk mencegah pantulan frame beruntun
+      if (code === lastScannedCode && (now - lastScannedTime) < 1500) {
         return;
       }
 
@@ -422,6 +463,23 @@
     }
 
     async function sendAttendanceToGas(code) {
+      const modeLabel = scanMode === "IN" ? "MASUK" : "PULANG";
+
+      // Cek aturan 1x Absen Masuk & 1x Absen Pulang per hari secara instan sebelum mengirim ke server
+      if (hasAttendedToday(code, scanMode)) {
+        isProcessingRequest = true;
+        playBeep(false);
+        const alreadyMsg = `Anda sudah melakukan Absen ${modeLabel} hari ini (maksimal 1x per hari).`;
+        showResult("error", `SUDAH ABSEN ${modeLabel}`, `Kode: ${code}`, alreadyMsg);
+        showErrorModal(code, alreadyMsg);
+        lastScannedCode = code;
+        lastScannedTime = Date.now();
+        setTimeout(() => {
+          isProcessingRequest = false;
+        }, 1100);
+        return;
+      }
+
       const gasUrl = getGasUrl();
       if (!gasUrl || !gasUrl.startsWith("http")) {
         playBeep(false);
@@ -431,7 +489,6 @@
       }
 
       isProcessingRequest = true;
-      const modeLabel = scanMode === "IN" ? "MASUK" : "PULANG";
       showResult("loading", "MEMPROSES...", `Kode: ${code}`, `Mencatat absen ${modeLabel} ke Spreadsheet...`);
 
       try {
@@ -449,6 +506,8 @@
         const timeNow = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
         if (res.success) {
+          // Kunci otomatis di perangkat untuk hari ini agar tidak bisa absen masuk/pulang 2x
+          markAttendedToday(code, scanMode, timeNow);
           playBeep(true);
           const nama = res.data ? `${res.data.nama} (${res.data.kelasJabatan})` : code;
           const fullMsg = res.message || `Absen ${modeLabel} berhasil dicatat`;
@@ -457,6 +516,11 @@
           showSuccessModal(scanMode, nama, fullMsg);
           prependHistory(timeNow, nama, fullMsg, true);
         } else {
+          // Jika server GAS juga menolak karena sudah absen hari ini, sinkronkan kunci harian lokal
+          const lowerMsg = String(res.message || "").toLowerCase();
+          if (lowerMsg.includes("sudah") || lowerMsg.includes("telah")) {
+            markAttendedToday(code, scanMode, timeNow);
+          }
           playBeep(false);
           showResult("error", "GAGAL", `Kode: ${code}`, res.message || "Gagal mencatat absensi.");
           showErrorModal(code, res.message || "Kartu tidak terdaftar di database.");
@@ -466,13 +530,12 @@
         playBeep(false);
         showResult("error", "KONEKSI ERROR", "Gagal Terhubung ke Server GAS", "Periksa koneksi internet atau URL Web App Anda.");
       } finally {
-        // Perbarui waktu scan terakhir SETELAH server selesai merespons, sehingga kartu yang sama tidak langsung ter-scan ulang
         lastScannedCode = code;
         lastScannedTime = Date.now();
-        // Buka kunci pemindaian setelah pop-up notifikasi selesai tampil (1600ms) agar tidak menumpuk
+        // Buka kunci lebih cepat (900ms) agar siswa berikutnya bisa langsung scan tanpa tertahan lama
         setTimeout(() => {
           isProcessingRequest = false;
-        }, 1250);
+        }, 900);
       }
     }
 
@@ -516,7 +579,7 @@
       // Titik tengah antara 2000ms dan 1500ms -> 1500ms (1.75 detik)
       notifTimeout = setTimeout(() => {
         hideNotifOverlay();
-      }, 1250);
+      }, 900);
     }
 
     function showErrorModal(code, errorMsg) {
@@ -540,7 +603,7 @@
       if (notifTimeout) clearTimeout(notifTimeout);
       notifTimeout = setTimeout(() => {
         hideNotifOverlay();
-      }, 2000);
+      }, 1400);
     }
 
     function hideNotifOverlay() {
