@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;450;700;800&display=swap');
     body { font-family: 'Inter', sans-serif; }
     #videoPreview { border-radius: 1rem; object-fit: cover; width: 100%; height: 100%; }
     .scan-laser {
@@ -65,7 +65,7 @@
 
     <!-- Pemilih Mode Masuk / Pulang -->
     <div class="grid grid-cols-2 gap-2 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
-      <button type="button" id="btnModeIn" onclick="setScanMode('IN')" class="py-3 rounded-xl font-extrabold text-sm bg-emerald-600 text-white shadow-lg transition flex items-center justify-center gap-2">
+      <button type="button" id="btnModeIn" onclick="setScanMode('IN')" class="py-3 rounded-xl font-extrabold text-sm bg-emerald-450 text-white shadow-lg transition flex items-center justify-center gap-2">
         <i class="fa-solid fa-right-to-bracket"></i> ABSEN MASUK
       </button>
       <button type="button" id="btnModeOut" onclick="setScanMode('OUT')" class="py-3 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2">
@@ -106,7 +106,7 @@
       </div>
 
       <div class="grid grid-cols-2 gap-2">
-        <button type="button" onclick="startCamera()" class="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow transition flex items-center justify-center gap-1.5">
+        <button type="button" onclick="startCamera()" class="py-2.5 rounded-xl bg-emerald-450 hover:bg-emerald-500 text-white font-extrabold text-xs shadow transition flex items-center justify-center gap-1.5">
           <i class="fa-solid fa-play"></i> Nyalakan Kamera
         </button>
         <button type="button" onclick="stopCamera()" class="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition flex items-center justify-center gap-1.5">
@@ -117,7 +117,7 @@
       <!-- Input Manual / Cadangan -->
       <form onsubmit="handleManualInput(event)" class="pt-2 border-t border-slate-800 flex gap-2">
         <input type="text" id="manualCodeInput" placeholder="Atau ketik Kode QR / NIS / NIP..." class="flex-1 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        <button type="submit" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs">Kirim</button>
+        <button type="submit" class="px-4 py-2 rounded-xl bg-blue-450 hover:bg-blue-500 text-white font-bold text-xs">Kirim</button>
       </form>
     </div>
 
@@ -178,7 +178,7 @@
       </div>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" onclick="toggleConfigModal()" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">Batal</button>
-        <button type="button" onclick="saveGasUrl()" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold">Simpan URL</button>
+        <button type="button" onclick="saveGasUrl()" class="px-5 py-2 rounded-xl bg-emerald-450 hover:bg-emerald-500 text-white text-xs font-extrabold">Simpan URL</button>
       </div>
     </div>
   </div>
@@ -241,14 +241,14 @@
       const laserLine = document.getElementById("laserLine");
 
       if (mode === "IN") {
-        btnIn.className = "py-3 rounded-xl font-extrabold text-sm bg-emerald-600 text-white shadow-lg transition flex items-center justify-center gap-2";
+        btnIn.className = "py-3 rounded-xl font-extrabold text-sm bg-emerald-450 text-white shadow-lg transition flex items-center justify-center gap-2";
         btnOut.className = "py-3 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2";
         camCard.className = "bg-slate-900 rounded-2xl border-2 border-emerald-500/60 p-3.5 space-y-3 shadow-xl transition-colors";
         targetFrame.className = "w-52 h-52 border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(2,6,23,0.45)]";
         laserLine.style.background = "#10b981";
         laserLine.style.boxShadow = "0 0 12px #10b981, 0 0 20px #10b981";
       } else {
-        btnOut.className = "py-3 rounded-xl font-extrabold text-sm bg-blue-600 text-white shadow-lg transition flex items-center justify-center gap-2";
+        btnOut.className = "py-3 rounded-xl font-extrabold text-sm bg-blue-450 text-white shadow-lg transition flex items-center justify-center gap-2";
         btnIn.className = "py-3 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2";
         camCard.className = "bg-slate-900 rounded-2xl border-2 border-blue-500/60 p-3.5 space-y-3 shadow-xl transition-colors";
         targetFrame.className = "w-52 h-52 border-2 border-blue-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(2,6,23,0.45)]";
@@ -402,8 +402,8 @@
       if (!code || isProcessingRequest) return;
 
       const now = Date.now();
-      // Titik tengah antara 2.5 detik (2500ms) dan 1.8 detik (1800ms) -> 2.15 detik (2150ms)
-      if (code === lastScannedCode && (now - lastScannedTime) < 2150) {
+      // Titik tengah antara 2.5 detik (2500ms) dan 1.8 detik (1800ms) -> 2.15 detik (1900ms)
+      if (code === lastScannedCode && (now - lastScannedTime) < 1900) {
         return;
       }
 
@@ -466,10 +466,10 @@
         playBeep(false);
         showResult("error", "KONEKSI ERROR", "Gagal Terhubung ke Server GAS", "Periksa koneksi internet atau URL Web App Anda.");
       } finally {
-        // Titik tengah antara 800ms dan 400ms -> 600ms
+        // Titik tengah antara 800ms dan 400ms -> 450ms
         setTimeout(() => {
           isProcessingRequest = false;
-        }, 600);
+        }, 450);
       }
     }
 
@@ -510,10 +510,10 @@
       overlay.classList.add("flex");
 
       if (notifTimeout) clearTimeout(notifTimeout);
-      // Titik tengah antara 2000ms dan 1500ms -> 1750ms (1.75 detik)
+      // Titik tengah antara 2000ms dan 1500ms -> 1500ms (1.75 detik)
       notifTimeout = setTimeout(() => {
         hideNotifOverlay();
-      }, 1750);
+      }, 1500);
     }
 
     function showErrorModal(code, errorMsg) {
