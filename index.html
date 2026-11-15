@@ -284,7 +284,14 @@
 
         await html5QrScanner.start(
           cameraConfig,
-          { fps: 18, qrbox: { width: 230, height: 230 }, aspectRatio: 1.0 },
+          { 
+            fps: 30,                             // 1. Naikkan FPS dari 18 ke 30 agar deteksi frame lebih cepat
+            qrbox: { width: 220, height: 220 },  // 2. Ukuran kotak fokus diperpas
+            aspectRatio: 1.0,
+            experimentalFeatures: {
+              useBarCodeDetectorIfSupported: true // 3. Gunakan pemindai bawaan hardware browser jika didukung (jauh lebih cepat)
+            }
+          },
           onQrCodeScanned,
           () => {}
         );
@@ -318,7 +325,9 @@
       const code = String(decodedText || "").trim();
       if (!code) return;
       const now = Date.now();
-      if (code === lastScannedCode && (now - lastScannedTime) < 3500) {
+      
+      // Ubah jeda cooldown dari 3500ms menjadi 1200ms agar lebih sigap
+      if (code === lastScannedCode && (now - lastScannedTime) < 1200) {
         return;
       }
       lastScannedCode = code;
@@ -406,7 +415,7 @@
       if (bigCheckTimeout) clearTimeout(bigCheckTimeout);
       bigCheckTimeout = setTimeout(() => {
         hideBigCheckOverlay();
-      }, 2800);
+      }, 1200);
     }
 
     function hideBigCheckOverlay() {
