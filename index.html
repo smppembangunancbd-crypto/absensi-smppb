@@ -139,7 +139,10 @@
     <div class="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
       <div class="px-4 py-2.5 border-b border-slate-800 flex justify-between items-center">
         <h3 class="text-xs font-extrabold text-slate-300">Riwayat Scan Perangkat Ini</h3>
-        <span id="scanCounterBadge" class="text-[11px] font-bold text-emerald-400">0 scan</span>
+        <div class="flex items-center gap-2">
+          <span id="syncStatusBadge" class="hidden text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 animate-pulse">Menyimpan 0...</span>
+          <span id="scanCounterBadge" class="text-[11px] font-bold text-emerald-400">0 scan</span>
+        </div>
       </div>
       <div id="sessionHistoryList" class="divide-y divide-slate-800/80 max-h-44 overflow-y-auto text-xs">
         <div class="p-4 text-center text-slate-500">Belum ada pemindaian pada sesi ini.</div>
@@ -196,6 +199,8 @@
     let lastScannedTime = 0;
     let sessionLogs = [];
     let notifTimeout = null;
+    let syncQueue = [];
+    let isSyncWorkerRunning = false;
 
     function getTodayDateKey() {
       const now = new Date();
@@ -235,6 +240,17 @@
       try {
         localStorage.setItem(getTodayDateKey(), JSON.stringify(records));
       } catch (e) {}
+    }
+
+    function unmarkAttendedToday(code, mode) {
+      const normalizedCode = String(code || "").trim().toUpperCase();
+      const records = getDailyAttendanceRecord();
+      if (records[normalizedCode] && records[normalizedCode][mode]) {
+        delete records[normalizedCode][mode];
+        try {
+          localStorage.setItem(getTodayDateKey(), JSON.stringify(records));
+        } catch (e) {}
+      }
     }
 
     if ("BarcodeDetector" in window) {
@@ -462,21 +478,32 @@
       sendAttendanceToGas(code);
     }
 
-    async function sendAttendanceToGas(code) {
+    function updateSyncBadge() {
+      const badge = document.getElementById("syncStatusBadge");
+      if (!badge) return;
+      if (syncQueue.length > 0) {
+        badge.textContent = `Sync ${syncQueue.length} antrean...`;
+        badge.classList.remove("hidden");
+      } else {
+        badge.classList.add("hidden");
+      }
+    }
+
+    function sendAttendanceToGas(code) {
       const modeLabel = scanMode === "IN" ? "MASUK" : "PULANG";
 
-      // Cek aturan 1x Absen Masuk & 1x Absen Pulang per hari secara instan sebelum mengirim ke server
+      // 1. Cek aturan 1x Absen Masuk & 1x Absen Pulang per hari secara instan (< 1ms)
       if (hasAttendedToday(code, scanMode)) {
         isProcessingRequest = true;
         playBeep(false);
-        const alreadyMsg = `Anda sudah melakukan Absen ${modeLabel} hari ini (maksimal 1x per hari).`;
+        const alreadyMsg = `Sudah melakukan Absen ${modeLabel} hari ini (maksimal 1x per hari).`;
         showResult("error", `SUDAH ABSEN ${modeLabel}`, `Kode: ${code}`, alreadyMsg);
         showErrorModal(code, alreadyMsg);
         lastScannedCode = code;
         lastScannedTime = Date.now();
         setTimeout(() => {
           isProcessingRequest = false;
-        }, 1100);
+        }, 900);
         return;
       }
 
@@ -488,55 +515,91 @@
         return;
       }
 
+      // 2. OPTIMISTIC UI: Kunci harian & tampilkan notif BERHASIL secara INSTAN tanpa menunggu server GAS!
+      const timeNow = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      markAttendedToday(code, scanMode, timeNow);
+
       isProcessingRequest = true;
-      showResult("loading", "MEMPROSES...", `Kode: ${code}`, `Mencatat absen ${modeLabel} ke Spreadsheet...`);
+      playBeep(true);
 
-      try {
-        const response = await fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            idUser: code,
-            mode: scanMode,
-            metode: "Kamera Live Eksternal"
-          })
-        });
+      const instantMsg = `Absen ${modeLabel} tercatat (${timeNow}) • Menyimpan ke Spreadsheet...`;
+      showResult("success", `TERCATAT • ${modeLabel}`, `ID: ${code}`, instantMsg);
+      showSuccessModal(scanMode, `ID: ${code}`, `Absen ${modeLabel} Berhasil (${timeNow})`);
 
-        const res = await response.json();
-        const timeNow = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const logId = Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      prependHistory(timeNow, `ID: ${code}`, `Absen ${modeLabel} • Mengirim...`, true, logId);
 
-        if (res.success) {
-          // Kunci otomatis di perangkat untuk hari ini agar tidak bisa absen masuk/pulang 2x
-          markAttendedToday(code, scanMode, timeNow);
-          playBeep(true);
-          const nama = res.data ? `${res.data.nama} (${res.data.kelasJabatan})` : code;
-          const fullMsg = res.message || `Absen ${modeLabel} berhasil dicatat`;
-          
-          showResult("success", `BERHASIL • ${modeLabel}`, nama, fullMsg);
-          showSuccessModal(scanMode, nama, fullMsg);
-          prependHistory(timeNow, nama, fullMsg, true);
-        } else {
-          // Jika server GAS juga menolak karena sudah absen hari ini, sinkronkan kunci harian lokal
-          const lowerMsg = String(res.message || "").toLowerCase();
-          if (lowerMsg.includes("sudah") || lowerMsg.includes("telah")) {
-            markAttendedToday(code, scanMode, timeNow);
+      // Masukkan ke antrean pengiriman latar belakang (Background Sync)
+      syncQueue.push({
+        logId,
+        code,
+        mode: scanMode,
+        modeLabel,
+        timeNow,
+        gasUrl
+      });
+      updateSyncBadge();
+      processSyncQueue();
+
+      // Buka kunci kamera dalam 850ms agar siswa berikutnya bisa langsung scan tanpa menunggu respons GAS!
+      lastScannedCode = code;
+      lastScannedTime = Date.now();
+      setTimeout(() => {
+        isProcessingRequest = false;
+      }, 850);
+    }
+
+    async function processSyncQueue() {
+      if (isSyncWorkerRunning || syncQueue.length === 0) return;
+      isSyncWorkerRunning = true;
+
+      while (syncQueue.length > 0) {
+        const job = syncQueue[0];
+        updateSyncBadge();
+
+        try {
+          const response = await fetch(job.gasUrl, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              idUser: job.code,
+              mode: job.mode,
+              metode: "Kamera Live Eksternal"
+            })
+          });
+
+          const res = await response.json();
+
+          if (res.success) {
+            const nama = res.data ? `${res.data.nama} (${res.data.kelasJabatan})` : job.code;
+            const fullMsg = res.message || `Absen ${job.modeLabel} tersimpan (${job.timeNow})`;
+            updateHistoryItem(job.logId, nama, fullMsg, true);
+            // Perbarui kartu status bawah jika belum tertimpa scan baru
+            const currentTitle = document.getElementById("resultTitle").textContent;
+            if (currentTitle === `ID: ${job.code}`) {
+              showResult("success", `TERSIMPAN • ${job.modeLabel}`, nama, fullMsg);
+            }
+          } else {
+            const lowerMsg = String(res.message || "").toLowerCase();
+            // Jika ditolak karena bukan duplikat (misal QR tidak terdaftar), buka kembali kunci hariannya
+            if (!lowerMsg.includes("sudah") && !lowerMsg.includes("telah")) {
+              unmarkAttendedToday(job.code, job.mode);
+            }
+            playBeep(false);
+            updateHistoryItem(job.logId, `Gagal: ${job.code}`, res.message || "Kartu tidak terdaftar", false);
+            showResult("error", "DITOLAK SERVER", `Kode: ${job.code}`, res.message || "Kartu tidak terdaftar di database.");
           }
-          playBeep(false);
-          showResult("error", "GAGAL", `Kode: ${code}`, res.message || "Gagal mencatat absensi.");
-          showErrorModal(code, res.message || "Kartu tidak terdaftar di database.");
-          prependHistory(timeNow, code, res.message || "Gagal", false);
+        } catch (err) {
+          // Jika gagal jaringan, buka kunci harian agar bisa dicoba ulang dan tandai gagal di riwayat
+          unmarkAttendedToday(job.code, job.mode);
+          updateHistoryItem(job.logId, `Gagal Koneksi: ${job.code}`, "Gagal terhubung ke Spreadsheet", false);
         }
-      } catch (err) {
-        playBeep(false);
-        showResult("error", "KONEKSI ERROR", "Gagal Terhubung ke Server GAS", "Periksa koneksi internet atau URL Web App Anda.");
-      } finally {
-        lastScannedCode = code;
-        lastScannedTime = Date.now();
-        // Buka kunci lebih cepat (900ms) agar siswa berikutnya bisa langsung scan tanpa tertahan lama
-        setTimeout(() => {
-          isProcessingRequest = false;
-        }, 900);
+
+        syncQueue.shift();
+        updateSyncBadge();
       }
+
+      isSyncWorkerRunning = false;
     }
 
     function showSuccessModal(mode, namaUser, detailText) {
@@ -643,9 +706,7 @@
       }
     }
 
-    function prependHistory(time, title, detail, ok) {
-      sessionLogs.unshift({ time, title, detail, ok });
-      if (sessionLogs.length > 25) sessionLogs.pop();
+    function renderHistoryList() {
       document.getElementById("scanCounterBadge").textContent = `${sessionLogs.length} scan`;
       document.getElementById("sessionHistoryList").innerHTML = sessionLogs.map(item => `
         <div class="px-4 py-2 flex items-center justify-between gap-2">
@@ -655,10 +716,27 @@
           </div>
           <div class="text-right shrink-0">
             <span class="font-mono text-[11px] text-slate-400 block">${item.time}</span>
-            <span class="text-[10px] font-bold ${item.ok ? 'text-emerald-400' : 'text-rose-400'}">${item.ok ? 'Tersimpan' : 'Gagal'}</span>
+            <span class="text-[10px] font-bold ${item.ok ? 'text-emerald-400' : 'text-rose-400'}">${item.statusLabel || (item.ok ? 'Tersimpan' : 'Gagal')}</span>
           </div>
         </div>
       `).join("");
+    }
+
+    function prependHistory(time, title, detail, ok, logId) {
+      sessionLogs.unshift({ id: logId, time, title, detail, ok, statusLabel: "Menyimpan..." });
+      if (sessionLogs.length > 30) sessionLogs.pop();
+      renderHistoryList();
+    }
+
+    function updateHistoryItem(logId, newTitle, newDetail, ok) {
+      const target = sessionLogs.find(item => item.id === logId);
+      if (target) {
+        target.title = newTitle;
+        target.detail = newDetail;
+        target.ok = ok;
+        target.statusLabel = ok ? "Tersimpan" : "Gagal";
+        renderHistoryList();
+      }
     }
   </script>
 </body>
