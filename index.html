@@ -70,12 +70,23 @@
       </div>
     </div>
 
+    <!-- Info Jadwal & Status Auto-Switch -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl px-3.5 py-2 flex items-center justify-between gap-2 text-[11px]">
+      <div class="flex items-center gap-1.5 text-slate-300 truncate">
+        <i class="fa-regular fa-clock text-emerald-400"></i>
+        <span id="scheduleInfoText">Jadwal: Masuk 07:00 • Pulang 14:00</span>
+      </div>
+      <button type="button" id="btnAutoModeToggle" onclick="toggleAutoMode()" class="shrink-0 px-2.5 py-1 rounded-full font-extrabold text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 transition">
+        <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>AUTO JADWAL: ON
+      </button>
+    </div>
+
     <!-- Pemilih Mode Masuk / Pulang -->
     <div class="grid grid-cols-2 gap-2 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
-      <button type="button" id="btnModeIn" onclick="setScanMode('IN')" class="py-3 rounded-xl font-extrabold text-sm bg-emerald-600 text-white shadow-lg transition flex items-center justify-center gap-2">
+      <button type="button" id="btnModeIn" onclick="setScanMode('IN', true)" class="py-3 rounded-xl font-extrabold text-sm bg-emerald-600 text-white shadow-lg transition flex items-center justify-center gap-2">
         <i class="fa-solid fa-right-to-bracket"></i> ABSEN MASUK
       </button>
-      <button type="button" id="btnModeOut" onclick="setScanMode('OUT')" class="py-3 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2">
+      <button type="button" id="btnModeOut" onclick="setScanMode('OUT', true)" class="py-3 rounded-xl font-extrabold text-sm text-slate-400 hover:text-white transition flex items-center justify-center gap-2">
         <i class="fa-solid fa-right-from-bracket"></i> ABSEN PULANG
       </button>
     </div>
@@ -204,6 +215,13 @@
     const GAS_URL_KEY = "smp_pembangunan_gas_webapp_url";
     const DAILY_LOCK_PREFIX = "smp_pembangunan_absen_harian_";
     let scanMode = "IN";
+    let isAutoScheduleMode = true;
+    let todayScheduleConfig = {
+      hari: "",
+      jamMasuk: "07:00",
+      jamPulang: "14:00",
+      statusHari: "Aktif"
+    };
     let soundEnabled = true;
     let videoStream = null;
     let scanLoopId = null;
@@ -281,6 +299,8 @@
       const savedUrl = localStorage.getItem(GAS_URL_KEY) || "";
       document.getElementById("gasUrlInput").value = savedUrl;
       updateUrlAlertVisibility();
+      evaluateAutoScanMode();
+      setInterval(evaluateAutoScanMode, 10000);
       startLiveFeedPolling();
       await populateCameras();
       startCamera();
@@ -309,7 +329,72 @@
       fetchLiveAttendanceFeed(true);
     }
 
-    function setScanMode(mode) {
+    function timeToMinutes(hhmm) {
+      const parts = String(hhmm || "00:00").split(":").map(Number);
+      return ((parts[0] || 0) * 60) + (parts[1] || 0);
+    }
+
+    function updateAutoModeBadge() {
+      const btn = document.getElementById("btnAutoModeToggle");
+      if (!btn) return;
+      if (isAutoScheduleMode) {
+        btn.className = "shrink-0 px-2.5 py-1 rounded-full font-extrabold text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 transition";
+        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>AUTO JADWAL: ON';
+      } else {
+        btn.className = "shrink-0 px-2.5 py-1 rounded-full font-extrabold text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 transition";
+        btn.innerHTML = '<i class="fa-solid fa-hand mr-1"></i>MANUAL (Klik Auto)';
+      }
+    }
+
+    function toggleAutoMode() {
+      isAutoScheduleMode = !isAutoScheduleMode;
+      updateAutoModeBadge();
+      if (isAutoScheduleMode) {
+        evaluateAutoScanMode();
+      }
+    }
+
+    function minutesToHHMM(totalMins) {
+      const normalized = ((totalMins % 1440) + 1440) % 1440;
+      const h = String(Math.floor(normalized / 60)).padStart(2, "0");
+      const m = String(normalized % 60).padStart(2, "0");
+      return `${h}:${m}`;
+    }
+
+    function evaluateAutoScanMode() {
+      const masukBase = timeToMinutes(todayScheduleConfig.jamMasuk || "07:00");
+      const pulangBase = timeToMinutes(todayScheduleConfig.jamPulang || "14:00");
+
+      // Sesi Masuk & Pulang dimulai 2 jam (120 menit) sebelum jadwal masuk dan jadwal pulang
+      const bukaMasukMinutes = Math.max(0, masukBase - 120);
+      const bukaPulangMinutes = Math.max(bukaMasukMinutes + 60, pulangBase - 120);
+
+      const infoEl = document.getElementById("scheduleInfoText");
+      if (infoEl) {
+        if (todayScheduleConfig.statusHari === "Libur") {
+          infoEl.textContent = "Jadwal Hari Ini: HARI LIBUR";
+        } else {
+          infoEl.textContent = `Buka Masuk ${minutesToHHMM(bukaMasukMinutes)} • Pulang ${minutesToHHMM(bukaPulangMinutes)}`;
+        }
+      }
+
+      if (!isAutoScheduleMode) return;
+
+      const now = new Date();
+      const nowMinutes = (now.getHours() * 60) + now.getMinutes();
+
+      // Mulai 2 jam sebelum jam pulang, otomatis pindah ke mode PULANG (OUT); sebelumnya mode MASUK (IN)
+      const targetMode = nowMinutes >= bukaPulangMinutes ? "OUT" : "IN";
+      if (scanMode !== targetMode) {
+        setScanMode(targetMode, false);
+      }
+    }
+
+    function setScanMode(mode, isManualClick = false) {
+      if (isManualClick) {
+        isAutoScheduleMode = false;
+        updateAutoModeBadge();
+      }
       scanMode = mode;
       const btnIn = document.getElementById("btnModeIn");
       const btnOut = document.getElementById("btnModeOut");
@@ -727,40 +812,75 @@
     }
 
     function startLiveFeedPolling() {
-      fetchLiveAttendanceFeed(true);
-      if (livePollTimer) clearInterval(livePollTimer);
-      // Polling ringan setiap 3.5 detik untuk menarik data terbaru dari Spreadsheet secara real-time
-      livePollTimer = setInterval(() => {
+      if (livePollTimer) clearTimeout(livePollTimer);
+
+      const runLoop = async () => {
         if (!document.hidden && syncQueue.length === 0) {
-          fetchLiveAttendanceFeed(false);
+          await fetchLiveAttendanceFeed(false);
         }
-      }, 3500);
+        livePollTimer = setTimeout(runLoop, 2500);
+      };
+
+      // Jalankan langsung saat halaman dibuka
+      runLoop();
     }
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        fetchLiveAttendanceFeed(false);
+      }
+    });
+
+    window.addEventListener("focus", () => {
+      fetchLiveAttendanceFeed(false);
+    });
 
     async function fetchLiveAttendanceFeed(isManual = false) {
       const gasUrl = getGasUrl();
-      if (!gasUrl || !gasUrl.startsWith("http") || isFetchingLiveFeed) return;
+      if (!gasUrl || !gasUrl.startsWith("http")) return;
+      if (isFetchingLiveFeed && !isManual) return;
 
       isFetchingLiveFeed = true;
       const icon = document.getElementById("liveRefreshIcon");
+      const updEl = document.getElementById("liveLastUpdate");
+      const dot = document.getElementById("liveDot");
       if (icon && isManual) icon.classList.add("fa-spin");
 
       try {
         const separator = gasUrl.includes("?") ? "&" : "?";
-        const url = `${gasUrl}${separator}action=liveFeed&t=${Date.now()}`;
-        const response = await fetch(url, { method: "GET" });
-        const res = await response.json();
+        const url = `${gasUrl}${separator}action=liveFeed&_=${Date.now()}`;
+        const response = await fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          cache: "no-store"
+        });
+
+        const rawText = await response.text();
+        let res = null;
+        try {
+          res = JSON.parse(rawText);
+        } catch (parseErr) {
+          // Jika server mengembalikan HTML (artinya doGet di GAS belum di-deploy versi baru dengan action=liveFeed)
+          if (updEl) updEl.textContent = "Perlu Deploy Ulang GAS";
+          if (dot) dot.className = "w-2 h-2 rounded-full bg-rose-500";
+          return;
+        }
 
         if (res && res.success && Array.isArray(res.data)) {
+          if (res.schedule) {
+            todayScheduleConfig = Object.assign(todayScheduleConfig, res.schedule);
+            evaluateAutoScanMode();
+          }
           mergeSpreadsheetLiveFeed(res.data);
           const nowStr = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-          const updEl = document.getElementById("liveLastUpdate");
           if (updEl) updEl.textContent = `Live • ${nowStr}`;
-          const dot = document.getElementById("liveDot");
           if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+        } else {
+          if (updEl) updEl.textContent = "Gagal memuat feed";
+          if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400";
         }
       } catch (e) {
-        const dot = document.getElementById("liveDot");
+        if (updEl) updEl.textContent = "Gangguan koneksi";
         if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400";
       } finally {
         isFetchingLiveFeed = false;
